@@ -23,7 +23,7 @@ DigitalOut led(LED1);
 
 int main()
 {
-    printf("---programm start---\n");
+    printf("---programm start Rover---\n");
     // initalise spi port
 
     spi.format(8, 0);
@@ -33,18 +33,54 @@ int main()
     RFM95 lora(CS_PIN, INT_PIN, &spi);
     // initalise LoRa
     lora.init();
-    lora.setModeContRX();
     uint8_t data[RH_RF95_MAX_MESSAGE_LEN];
     uint8_t len = sizeof(data);
-
+    int state = 2;
     uint8_t loop = 1;
-    while(loop){
-        if(lora.event_handler() == RX_DONE){
-            lora.receive(data, &len);
-            printf("recieved a message:\n");
-            printf("%s\n\n",(char*) data);
-        }
+    
+    uint8_t buf[] = {"Hello World! PONG!"};
+    led = 0;
+    lora.setModeContRX();
 
+    while(loop){
+        
+        switch(state){
+            case 0:
+                printf("something went wrong\n");
+                ThisThread::sleep_for(2s);
+                
+            break;
+            case 1: // transmit state
+
+                
+                if(lora.event_handler() == TX_DONE){
+                    state = 2;
+                    led = 0;
+                    lora.setModeContRX();
+                    ThisThread::sleep_for(500ms);
+                    
+                    
+                }
+
+            break;
+            case 2: // receive state
+                if(lora.event_handler() == RX_DONE){
+                    lora.setModeIdle();
+                    lora.receive(data, len);
+                    printf("%s\n",data);
+                    state = 1;
+                    led = 1;
+                    ThisThread::sleep_for(500ms);
+                    if(!lora.transmit(buf, sizeof(buf))){ //transmit data
+                        printf("transmit failed\n");
+                        state = 0;
+                        break;
+                    }
+                }
+
+            break;
+        }
+        ThisThread::sleep_for(100ms);
         
     }
     printf("---program stop---\n");
@@ -53,4 +89,3 @@ int main()
     
 
 }
-
