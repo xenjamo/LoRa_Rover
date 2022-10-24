@@ -9,7 +9,7 @@
 
 //Hardware connections
 #define CS_PIN PB_1
-#define INT_PIN PA_8
+#define INT_PIN PC_4
 //SPI
 #define MOSI_PIN PB_15
 #define MISO_PIN PB_14
@@ -40,6 +40,7 @@ int main()
     
     uint8_t buf[] = {"Hello World! PONG!"};
     led = 0;
+    uint8_t data_ = lora.read(RH_RF95_REG_28_FEI_MSB);
     lora.setModeContRX();
 
     while(loop){
