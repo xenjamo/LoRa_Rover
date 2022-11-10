@@ -137,7 +137,7 @@ int main()
                     int i = 0;
                     while(gps.ubx[i].isvalid){
                         if(gps.ubx[i].ubx2string(buf, l)){
-                            printf("ubx = , l = %d\n",l);
+                            printf("ubx = %s, l = %d\n",buf,l);
                         } else {
                             printf("no ubx[%d]\n", i);
                         }
