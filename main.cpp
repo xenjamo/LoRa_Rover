@@ -6,6 +6,7 @@
 #include "mbed.h"
 #include "LoRa_interface.h"
 #include "GPS_interface.h"
+#include "SD_interface.h"
 
 
 //Hardware connections
@@ -56,6 +57,13 @@ int main()
     spi.frequency(1000000);
     uart.format(8,SerialBase::None,1);
     
+    //init SD card
+    
+    int _fakeint = 2;
+    SDCARD sd(_fakeint);
+    if(!sd.init()){
+        printf("SD init failed\n"); //if this fails all operations will be ignored(in case you wanna use it without sd card)
+    }
 
     // Create GPS object
 
@@ -97,7 +105,7 @@ int main()
                 
             break;
             case(RTK_IDLE):
-
+                led = 0;
                 if(lora.event_handler() == RX_DONE){
                     //printf("rx_done\n");
                     led = 1;
@@ -131,20 +139,21 @@ int main()
                 }
                 
                 if(gps.data_ready()){
+                    led = 1;
                     gps.decode();
                     char buf[400];
                     uint16_t l = 0;
                     int i = 0;
                     while(gps.ubx[i].isvalid){
                         if(gps.ubx[i].ubx2string(buf, l)){
-                            printf("ubx = %s, l = %d\n",buf,l);
+                            sd.write2sd(buf,l);
                         } else {
                             printf("no ubx[%d]\n", i);
                         }
                         i++;
                     }
+                    sd.writeln();
 
-                    printf("\n");
                     gps.clearAll();
                     
                 }
@@ -156,7 +165,6 @@ int main()
 
                 
                 if(lora.event_handler() == TX_DONE){
-                    led = 0;
                     
                     lora.setModeContRX();
                     //printf("so far so good\n");
