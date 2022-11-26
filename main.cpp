@@ -7,6 +7,7 @@
 #include "LoRa_interface.h"
 #include "GPS_interface.h"
 #include "SD_interface.h"
+#include "LSM9DS1.h"
 
 
 //Hardware connections
@@ -59,11 +60,14 @@ int main()
     
     //init SD card
     
-    int _fakeint = 2;
+    int _fakeint = 2; //dont ask please
     SDCARD sd(_fakeint);
     if(!sd.init()){
         printf("SD init failed\n"); //if this fails all operations will be ignored(in case you wanna use it without sd card)
     }
+    // define a header to know what values go where
+    char rover_header[] = "itow[ms];carrSoln;lon;lat;height[m];x[mm];y[mm];z[mm];hAcc[mm];vAcc[mm];LoRa_valid;SNR;RSSI;ax;az;az;gx;gy;gz;\n";
+    sd.write2sd(rover_header,sizeof(rover_header));
 
     // Create GPS object
 
@@ -74,6 +78,12 @@ int main()
 
     RFM95 lora(CS_PIN, INT_PIN, &spi);
     lora.init();
+
+    //  IMU stuff
+    LSM9DS1 imu(PC_9, PA_8, 0xD6, 0x3C);
+    if (!imu.begin()) {
+        printf("Failed to communicate with LSM9DS1.\r\n");
+    }
 
 
     uint8_t data[RH_RF95_MAX_MESSAGE_LEN];
@@ -125,7 +135,7 @@ int main()
                     lora.n_payloads = data[4];
                     data[0] = 0;
                     //printf("n=%d, buf=%d, rx=%d\n", lora.n_payloads, rtcm_len, rx_len-5);
-                    printf("some signal str: SNR=%d, RSSI=%d\n", lora.getSNR(),lora.getRSSI());
+                    //printf("some signal str: SNR=%d, RSSI=%d\n", lora.getSNR(),lora.getRSSI());
                     lora.flags = lora.flags | 0x01;
                     lora.setModeIdle();
                     if(!lora.transmit(data, 0)){ //transmit data
@@ -139,22 +149,56 @@ int main()
                 }
                 
                 if(gps.data_ready()){
+                    // read IMU data
+                    imu.readAccel();
+                    imu.readGyro();
+
                     led = 1;
                     gps.decode();
+
+                    bool signal_valid = lora.signal_valid();
+                    int8_t snr = lora.getSNR();
+                    uint8_t rssi = lora.getRSSI();
+
                     char buf[400];
                     uint16_t l = 0;
                     int i = 0;
+                    l = sprintf(buf, "%d;%d;", gps.itow, gps.rtk_stat)+1;
+                    sd.write2sd(buf, l);
+                    l = sprintf(buf, "%.9f;%.9f;%.5f;", gps.lon, gps.lat, gps.height)+1;
+                    sd.write2sd(buf, l);
+                    l = sprintf(buf, "%.2f;%.2f;%.2f;", gps.rel_x, gps.rel_y, gps.rel_z)+1;
+                    sd.write2sd(buf, l);
+                    l = sprintf(buf, "%.2f;%.2f;", gps.hAcc, gps.vAcc);
+                    sd.write2sd(buf, l);
+                
+
+                    //the accual data
+                    /* // all data
+                    l = 0;
+                    i = 0;
                     while(gps.ubx[i].isvalid){
                         if(gps.ubx[i].ubx2string(buf, l)){
-                            sd.write2sd(buf,l);
+                            sd.write2sd(buf, l);
                         } else {
                             printf("no ubx[%d]\n", i);
                         }
                         i++;
                     }
-                    sd.writeln();
-
+                    */
                     gps.clearAll();
+
+                    l = sprintf(buf, "%d;%d;%d;",signal_valid, snr, rssi)+1;
+                    sd.write2sd(buf, l);
+
+                    //IMU data
+                    l = sprintf(buf, "%.5f;%.5f;%.5f;",imu.accX,imu.accY,imu.accZ)+1;
+                    sd.write2sd(buf, l);
+                    l = sprintf(buf, "%.5f;%.5f;%.5f;",imu.gyroX,imu.gyroY,imu.gyroZ)+1;
+                    sd.write2sd(buf, l);
+                    
+                    sd.writeln();
+                    
                     
                 }
                 
