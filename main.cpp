@@ -45,17 +45,19 @@ typedef enum{
 //BufferedSerial pc(USBTX, USBRX);
 UnbufferedSerial uart(PA_0, PA_1, 921600);
 BufferedSerial pc(USBTX, USBRX, 115200);
-SPI spi(MOSI_PIN, MISO_PIN, SCLK_PIN);
+
 //bool txFlag = 0;
 DigitalOut led(LED1);
+LSM9DS1 imu(PC_9, PA_8, 0xD6, 0x3C);
 
 int main()
 {
     printf("---programm start Rover---\n");
 
     // initalise serial spi ports
+    SPI spi(MOSI_PIN, MISO_PIN, SCLK_PIN);
     spi.format(8, 0);
-    spi.frequency(1000000);
+    spi.frequency(10000000);
     uart.format(8,SerialBase::None,1);
     
     //init SD card
@@ -80,9 +82,9 @@ int main()
     lora.init();
 
     //  IMU stuff
-    LSM9DS1 imu(PC_9, PA_8, 0xD6, 0x3C);
+    
     if (!imu.begin()) {
-        printf("Failed to communicate with LSM9DS1.\r\n");
+        //printf("Failed to communicate with LSM9DS1.\n"); // seems there is a bug with this library where the whoAmI registeres are read as 0x00
     }
 
 
@@ -99,6 +101,7 @@ int main()
     uint8_t loop = 1;
     
     uint8_t n = 0;
+    bool imu_valid = 0;
 
     led = 0;
 
@@ -147,18 +150,22 @@ int main()
                     state = RTK_TRANSMIT;
                     
                 }
-                
-                if(gps.data_ready()){
-                    // read IMU data
+                if((gps.msg_pos == MSG_DATA) && !imu_valid){
                     imu.readAccel();
                     imu.readGyro();
-
+                    printf("%.5f;%.5f;%.5f;\n",imu.accX,imu.accY,imu.accZ);
+                    imu_valid = true;
+                }
+                
+                if(gps.data_ready()){
                     led = 1;
+                    //pack this in the data ready function
                     gps.decode();
+                    printf("\n\nl = %d\n",gps.rtcm_msg_length);
 
                     bool signal_valid = lora.signal_valid();
                     int8_t snr = lora.getSNR();
-                    uint8_t rssi = lora.getRSSI();
+                    int8_t rssi = lora.getRSSI();
 
                     char buf[400];
                     uint16_t l = 0;
@@ -171,7 +178,6 @@ int main()
                     sd.write2sd(buf, l);
                     l = sprintf(buf, "%.2f;%.2f;", gps.hAcc, gps.vAcc);
                     sd.write2sd(buf, l);
-                
 
                     //the accual data
                     /* // all data
@@ -187,15 +193,20 @@ int main()
                     }
                     */
                     gps.clearAll();
-
+                    printf("%d;%d;%d;\n",signal_valid, snr, rssi);
                     l = sprintf(buf, "%d;%d;%d;",signal_valid, snr, rssi)+1;
                     sd.write2sd(buf, l);
 
+                    
+
                     //IMU data
+                    
                     l = sprintf(buf, "%.5f;%.5f;%.5f;",imu.accX,imu.accY,imu.accZ)+1;
                     sd.write2sd(buf, l);
+                    //printf("%.5f;%.5f;%.5f;\n",imu.gyroX,imu.gyroY,imu.gyroZ);
                     l = sprintf(buf, "%.5f;%.5f;%.5f;",imu.gyroX,imu.gyroY,imu.gyroZ)+1;
                     sd.write2sd(buf, l);
+                    imu_valid = false;
                     
                     sd.writeln();
                     
@@ -227,6 +238,11 @@ int main()
                         printf("rtcm%d n bytes = %d, type = %d\n", i, gps.msg[i].length + 6, gps.msg[i].type);
                         }
                         gps.clearAll();
+                        /*
+                        printf("rtcm_lora = ");
+                        print_hex((char*)rtcm_data, rtcm_len);
+                        printf("\n");
+                        */
                         state = RTK_SEND_RTCM_MSG;
                         /*
                         printf("rtcm msg = ");
@@ -281,8 +297,15 @@ int main()
 
             break;
             case(RTK_SEND_RTCM_MSG):
-                
+                //printf("here");
                 gps.writeCompleteMsg(rtcm_data, rtcm_len);
+
+                /* 
+                printf("rtcm_lora = ");
+                print_hex((char*)rtcm_data, rtcm_len);
+                printf("\n");
+                */
+                
                 rtcm_len = 0;
                 state = RTK_IDLE;
                 gps.clearAll();
